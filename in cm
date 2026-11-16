@@ -1,0 +1,157 @@
+import cv2
+import mediapipe as mp
+import math
+
+# Camera calibration
+KNOWN_PALM_WIDTH_CM = 8.0
+
+# Measure your palm width in cm.
+# Change 8.0 to your actual palm width.
+KNOWN_DISTANCE_CM = 40.0
+
+# Enter the measured pixel width of your palm
+# when your hand is exactly 40 cm from camera.
+KNOWN_PALM_WIDTH_PIXELS = 150.0
+
+mp_hands = mp.solutions.hands
+mp_draw = mp.solutions.drawing_utils
+
+hands = mp_hands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
+)
+
+cap = cv2.VideoCapture(0)
+
+if not cap.isOpened():
+    print("Camera not opening!")
+    exit()
+
+while True:
+
+    ret, frame = cap.read()
+
+    if not ret:
+        break
+
+    frame = cv2.flip(frame, 1)
+
+    h, w, _ = frame.shape
+
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb)
+
+    if results.multi_hand_landmarks:
+
+        for hand in results.multi_hand_landmarks:
+
+            mp_draw.draw_landmarks(
+                frame,
+                hand,
+                mp_hands.HAND_CONNECTIONS
+            )
+
+            points = []
+
+            for lm in hand.landmark:
+                x = int(lm.x * w)
+                y = int(lm.y * h)
+                points.append((x, y))
+
+            # Palm width between landmarks 5 and 17
+            p5 = points[5]
+            p17 = points[17]
+
+            palm_pixels = math.dist(p5, p17)
+
+            # Estimate camera distance
+            if palm_pixels > 0:
+
+                distance_cm = (
+                    KNOWN_DISTANCE_CM *
+                    KNOWN_PALM_WIDTH_PIXELS /
+                    palm_pixels
+                )
+
+                # Near / Far detection
+                if distance_cm < 30:
+                    status = "NEAR"
+                    color = (0, 255, 0)
+
+                elif distance_cm < 60:
+                    status = "MEDIUM"
+                    color = (0, 255, 255)
+
+                else:
+                    status = "FAR"
+                    color = (0, 0, 255)
+
+                # Display distance
+                cv2.putText(
+                    frame,
+                    f"Distance: {distance_cm:.2f} cm",
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    color,
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    f"Hand Status: {status}",
+                    (20, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    color,
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    f"Palm Width: {palm_pixels:.1f} pixels",
+                    (20, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (255, 255, 0),
+                    2
+                )
+
+                # Draw palm points
+                for i in [5, 17]:
+                    cv2.circle(
+                        frame,
+                        points[i],
+                        9,
+                        (0, 255, 0),
+                        -1
+                    )
+
+                cv2.line(
+                    frame,
+                    p5,
+                    p17,
+                    (255, 0, 255),
+                    3
+                )
+
+    else:
+        cv2.putText(
+            frame,
+            "NO HAND DETECTED",
+            (20, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            2
+        )
+
+    cv2.imshow("Bionic Hand - Near Far Distance", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+hands.close()
+cv2.destroyAllWindows()
